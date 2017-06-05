@@ -1,0 +1,816 @@
+#! /Users/sghaneeabadi/virtualenvs/dawa-venv/bin/env python
+
+
+import numpy
+import math
+# import matplotlib.pyplot as plt
+
+import interface as dawa
+import query
+
+# #input from adult dataset
+# f = open("/Users/sghaneeabadi/Desktop/x1000.txt")
+# x = f.read().splitlines()
+# x = [int(i) for i in x]
+
+#input my random complex data
+# x = []
+# for i in range(1000):
+#     if i/2 == 0:
+#         x.append(1)
+#     else:
+#         x.append(10)
+#
+# xs = sorted(x)
+
+# Q = query.RandomRange(1000, 500)
+# true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# # ratioRange = numpy.linspace(0, 1, 50, endpoint=False)
+# ratioRange = [0.25]
+#
+# # Best ratio due to different random range queries
+# result = []
+# for ratio in ratioRange:
+#
+#     #DAWA on X
+#     hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], ratio).Run(Q, x, 1.0)
+#
+#     est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     diff = abs(true_ans - est_ans)
+#
+#     result.append(sum(diff) / len(diff)
+#     # MWEM
+#     # hatx = dawa.Algorithm(None, None, 'mwem', [], ratio).Run(Q, x, 1.0)
+#     )
+#
+#     # DAWA on sorted X
+#     # hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], ratio).Run(Q, xs, 1.0)
+#     #
+#     # est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     # diff = abs(true_ans - est_ans)
+#     #
+#     # result.append(sum(diff)/len(diff))
+#
+# print result
+#
+# print(ratioRange[result.index(min(result))])
+#
+# plt.plot(ratioRange, result)
+# plt.xlabel('Ratio')
+# plt.ylabel('Avg Error')
+# plt.title('Accuracy of results by changing the ratio (e=1.0)')
+# plt.show()
+
+
+# Best ratio due to differnt epsilon values
+# eps = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+# result = numpy.zeros([len(eps), 3])
+#
+# for i in range(len(eps)):
+#     temp = {}
+#     for ratio in ratioRange:
+#         hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], ratio).Run(Q, x, eps[i])
+#
+#         est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         diff = abs(true_ans - est_ans)
+#
+#         temp[ratio] = sum(diff) / len(diff)
+#
+#     bRatio = 0
+#     bValue = min(temp.values())
+#     for ratio, value in temp.iteritems():
+#         if value == bValue:
+#             bRatio = ratio
+#
+#     result[i] = [eps[i], bRatio, bValue]
+#
+# bRatios = result[:, 1]
+# bValues = result[:, 2]
+
+# #plot eps vs ratio and the accuracy of that ratio
+# f, ax = plt.subplots()
+# ax.plot(eps, bRatios, 'ro-', label = 'Best Ratio')
+# ax.plot(eps, bValues, 'bs-', label = 'Average Error')
+# plt.xlabel('Privacy budget')
+# plt.ylabel('Ratio/Avg Error')
+# # Now add the legend with some customizations.
+# legend = ax.legend(loc='upper right', shadow=False)
+#
+# # The frame is matplotlib.patches.Rectangle instance surrounding the legend.
+# frame = legend.get_frame()
+# frame.set_facecolor('0.90')
+#
+# # Set the fontsize
+# for label in legend.get_texts():
+#     label.set_fontsize('large')
+#
+# for label in legend.get_lines():
+#     label.set_linewidth(1.5)  # the legend line width
+#
+# plt.title('eps = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]')
+# plt.show()
+
+# plt.plot(eps, bRatios)
+# plt.xlabel('Privacy Budget')
+# plt.ylabel('Best Ratio')
+# plt.ylim([0.0, 0.5])
+# plt.title('eps = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]')
+# plt.show()
+numpy.random.seed(5)
+def dataGenerator(size, dist, mu=1000.0, sigma=900.0):
+    x = []
+
+    if dist == 'uniform':
+        x = [abs(int(numpy.random.uniform(1, 100, 1))) for i in range(5*size)]
+    elif dist == 'normal':
+        x = [abs(int(numpy.random.normal(mu, sigma))) for i in range(5*size)]
+    elif dist == 'simple':
+        for i in range(size/2):
+            x.append(1.0)
+        for i in range(size/2, size, 1):
+            x.append(100.0)
+
+    elif dist == 'complex':
+        for i in range(size):
+            if i % 2 == 0:
+                x.append(1.0)
+            else:
+                x.append(100.0)
+    elif dist == 'zipf':
+        a = 1.0001
+        for i in range(5*size):
+            t = numpy.random.zipf(a, 1)
+            while t>100:
+                t = numpy.random.zipf(a, 1)
+            x.append(list(t)[0])
+
+    x = [int(i) for i in x]
+    x = numpy.histogram(x, bins=size, range = (min(x), max(x)))
+
+    return [int(i) for i in x[0]]
+
+def initialPartitioning(x, Q):
+
+    lbounds = []
+    Qhat = []
+    qEND = False
+    ADDED = False
+    n = len(x)
+    lb = 0
+    lbounds.append(lb)
+    # for q in Q:
+    #     if lb == q[0]: # looking at left bound of query
+    #         Qhat.append(q)
+    #         Q.remove(q)
+    #
+    # for lb in range(1, len(x)):
+    #     for q in Q:
+    #         if lb == q[1]:
+    #             Qhat.append(q)
+    #             Q.remove(q)
+    #             if not qEND and not ADDED:
+    #                 lbounds.append(lb)
+    #                 ADDED = True
+    #
+    #     qEND = False
+    #     ADDED = False
+    #
+    #     for q in Qhat:
+    #         if lb == q[2]:
+    #             Qhat.remove(q)
+    #             if lb < n-1 and not ADDED:
+    #                 lbounds.append(lb+1)
+    #                 qEND = True
+    #                 ADDED = True
+    #
+    #     ADDED = False
+    Qs = sortQuerySet(Q)
+
+    for q in Qs:
+        wt, lb, rb = q
+
+        if lb not in lbounds:
+            lbounds.append(lb)
+
+        if rb+1 not in lbounds and rb+1< n:
+            lbounds.append(rb+1)
+
+    lbounds = reviseBuckets(list(numpy.sort(lbounds)), x)
+
+    bweights = []
+    rb = n
+    xhat = []
+    rlbounds = lbounds[::-1]
+
+    for lb in rlbounds:
+        xhat.insert(0, sum(x[lb:rb]))
+        bweights.insert(0, (rb - lb))
+        rb = lb
+        if lb == 0:
+            break
+
+    return [xhat, lbounds, bweights]
+
+def sortQuerySet(Q):
+    '''Sort Query set based on lb and rb. lb higher priority.'''
+    from intervaltree import IntervalTree
+    t = IntervalTree()
+
+    for q in Q: # Building the tree of intervals
+        w, lb, rb = q
+        t[lb:rb+1] = [w]
+
+    t = sorted(t)
+    Qs = []
+
+    for v in t:
+        q = [(v.data)[0], v.begin, v.end-1]
+        Qs.append(q)
+
+    return Qs
+
+def reviseBuckets(lbounds, x):
+    rb = len(x)
+    newLbounds = []
+    rlbounds = lbounds[::-1]
+
+    for lb in rlbounds:
+        stdb = numpy.std(x[lb:rb])
+        m = []
+
+        if (rb - lb) > 1:
+            for i in range(rb - lb - 1):
+                stdl = numpy.std(x[lb: (lb + i + 1)])
+                stdr = numpy.std(x[(lb + i + 1): rb])
+                m.append(1.0 - (stdl + stdr) / (2.0 * stdb))
+
+            bestSvalue = max(m)
+            bestInd = m.index(bestSvalue) + 1
+            if bestSvalue > 0.75 and bestInd > 0:
+                newLbounds.insert(0, lb + bestInd)
+                newLbounds.insert(0, lb)
+            else:
+                newLbounds.insert(0, lb)
+        else:
+            newLbounds.insert(0, lb)
+
+        rb = lb
+        if lb == 0:
+            break
+
+    return newLbounds
+
+def getQueryList(Q):
+    Q = Q.tolist()
+    Qlist = [q[0] for q in Q]
+    # Qb = []
+    # for q in Qlist:
+    #     qq = [q[1], q[2]]
+    #     Qb.append(qq)
+
+    return Qlist
+
+def query_Reform(Q, buckets):
+    import bisect
+
+    Qr = []
+    for q in Q:
+        w, lb, rb = q
+        lbq = bisect.bisect_left(buckets, lb)
+        rbq = bisect.bisect_left(buckets, rb+1) - 1
+        qr = [w, lbq, rbq]
+
+        Qr.append([qr])
+
+    return Qr
+
+def data_Rebuild(D, bweights, xSize):
+    shortx = D.tolist()
+    xb = numpy.zeros(xSize)
+    # rb = xSize
+    # rlbounds = lbounds[::-1]
+    # for lb in rlbounds:
+    #     last = shortx[-1]
+    #     x[lb:rb] = [last/(rb - lb)] * (rb - lb)
+    #     shortx.remove(last)
+    #     rb = lb
+    #     if lb == 0:
+    #         break
+
+    ind = 0
+    for i in range(len(shortx)):
+        rbb = ind + bweights[i]
+        xb[ind : rbb]=[shortx[i]/bweights[i]] * bweights[i]
+        ind = rbb
+
+    return xb
+
+def preprocessingError(x, xx, lbounds, weights):
+
+    avg_per_bucket = numpy.divide(xx, weights)
+    ravg_per_bucket = avg_per_bucket[::-1]
+    rlbounds = lbounds[::-1]
+    rb = len(x)
+    errors = numpy.zeros(len(x))
+    for c in range(len(rlbounds)):
+        lb = rlbounds[c]
+        errors[lb:rb] = [abs(v - ravg_per_bucket[c]) for v in x[lb:rb]]
+        rb = lb
+        if lb == 0:
+            break
+
+    return sum(errors)/len(errors)
+####### 1-Bucketizing based on queries #######
+
+# qSize = 50
+# Q = query.RandomRange(xSize, qSize)
+
+# x = [1, 1000, 1, 1000, 1, 1000]
+# Q = numpy.array([[[1, 0, 0]],[[1, 1, 1]],[[1, 2, 2]],[[1, 3, 3]],[[1, 4, 4]],[[1, 5, 5]]])
+# ratioRange = numpy.linspace(0, 1, 50, endpoint=False)
+# for ratio in ratioRange:
+#
+#     #DAWA on X
+#     hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], ratio).Run(Q, x, 1.0)
+#
+#     est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     diff = abs(true_ans - est_ans)
+#
+#     result_dawa.append(sum(diff) / len(diff))
+#
+#     # Preprocessed DAWA
+#     x2 = dawa.Algorithm('l1approx', [], 'greedyH2', [], ratio, bweights).Run(Qr, xx, 1.0)
+#     hatx2 = data_Reform(x2, buckets, xSize)
+#     est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     diff = abs(true_ans - est_ans)
+#
+#     result_rdawa.append(sum(diff)/len(diff))
+
+# eps = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+# for e in eps:
+#
+#     #DAWA on X
+#     hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], 0.25).Run(Q, x, e)
+#
+#     est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     diff = abs(true_ans - est_ans)
+#
+#     result_dawa.append(sum(diff) / len(diff))
+#
+#     # Preprocessed DAWA
+#     x2 = dawa.Algorithm('l1approx', [], 'greedyH2', [], 0.25, bweights).Run(Qr, xx, e)
+#     hatx2 = data_Reform(x2, buckets, xSize)
+#     est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     diff = abs(true_ans - est_ans)
+#
+#     result_rdawa.append(sum(diff)/len(diff))
+
+# print 'dawa = ', result_dawa
+# print 'pre + dawa = ', result_rdawa
+
+# Qsizes = [50, 100, 200, 350, 550, 800, 1000, 1500, 2000, 3000, 4000, 5000]
+# Qsizes = [50, 200, 350, 500, 650, 800, 1000]
+# Qsizes = [50]
+# comp_pre = []
+# # for qs in Qsizes:
+# #     Q = query.RandomRange(xSize, qs)
+# #     true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# #     Qb = getQueryList(Q)
+# #     Q1 = Qb[:]
+# #     xx, buckets, bweights = initialPartitioning(x, Q1)
+# #     Qr = query_Reform(Qb, buckets)
+# #     comp_pre.append(len(x) - len(xx))
+# #
+# #     # DAWA on X
+# #     # hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], 0.25).Run(Q, x, 1.0)
+# #     # est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# #     # diff1 = abs(true_ans - est_ans)
+# #     # result_dawa.append(sum(diff1) / len(diff1))
+# #
+# #     # Preprocessed DAWA
+# #     x2 = dawa.Algorithm('l1approx', [], 'greedyH2', [], 0.25, bweights).Run(Qr, xx, 1.0)
+# #     hatx2 = data_Rebuild(x2, buckets, xSize)
+# #     est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# #     # est_ans = numpy.array([sum([sum(x2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Qr])
+# #     diff2 = abs(true_ans - est_ans)
+# #
+# #     result_rdawa.append(sum(diff2) / len(diff2))
+#
+numpy.random.seed(5)
+
+# xSize = 6
+# x = [1, 1, 1, 100, 100, 100]
+
+xSize = 4096
+# x = dataGenerator(xSize, 'zipf')
+
+x = [int(x1.split('\n')[0]) for x1 in open('/home/shiny/Documents/Datasets/4096-zipf.txt', "r").readlines()]
+# x1 = [x1.split('\r') for x1 in open('/home/shiny/Downloads/New_pre/Data/4096-adult.txt', "r").readlines()][0]
+# x = [int(i1) for i1 in x1]
+#
+# x2 = [x2.split('\r') for x2 in open('/home/shiny/Downloads/New_pre/Data/4096-medicaldata.txt', "r").readlines()][0]
+# x2 = [int(i2) for i2 in x2]
+
+# x3 = [x3.split('\r') for x3 in open('/home/shiny/Downloads/New_pre/Data/4096-income.txt', "r").readlines()][0]
+# x3 = [int(i3) for i3 in x3]
+
+# x4 = [x4.split('\r') for x4 in open('/home/shiny/Downloads/New_pre/Data/4096-patent.txt', "r").readlines()][0]
+# x = [int(i4) for i4 in x4]
+
+# lines = open('/home/shiny/Documents/Datasets/porto/4096-time.txt', "r").readlines()
+# import csv
+# x = []
+# with open('/home/shiny/Documents/Datasets/porto/4096-time2.csv') as file:
+#     lines = list(csv.reader(file))
+#     x = [int(x5[0]) for x5 in lines]
+
+# X = [x1, x2, x4, x5]
+seeds = [numpy.random.randint(500000) for i in range(50)]
+stdBound = numpy.sort(numpy.random.uniform(0.0, 1.00000000001, 30))
+# file = '/home/shiny/Downloads/New_pre/Data/4096-patent.txt'
+# f=open(file,"r")
+# lines=f.readlines()
+# x=[]
+# for l in lines:
+#     x.append(int(l.split('\r')))
+# f.close()
+# Qsizes = [200, 600, 1000, 1400, 1800, 2200]
+# Qsizes = [50, 150, 250, 350, 450, 750, 850, 980, 1050]
+# Qsizes = [1000, 2000, 3000, 4000]
+# Qsizes = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
+qs = 1024
+def solve_query(stdb):
+    # print(stdb)
+    seed_dawa = []
+    seed_pdawa = []
+    seed_dawa_r = []
+    seed_pdawa_r = []
+    seed_npdawa_r = []
+
+    # Q = query.RandomRange(xSize, qs)
+    Q = query.RandomCenter(xSize, qs)
+    # Q = [[[1, 2, 3]]]
+    true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+
+    for seed in seeds:
+        #DAWA on X
+        dawa_orig = dawa.Algorithm('dawa', 'l1approx', [], 'greedyH', [], 0.25, list(numpy.ones(len(x))), seed, stdb, False)
+        hatx = dawa_orig.Run(Q, x, 1.0)
+        est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+        # diff1 = abs(true_ans - est_ans)
+        diff1_r = [abs((true_ans[i] - est_ans[i]))/max(1,abs(true_ans[i])) for i in range(len(Q))]
+        # seed_dawa.append(sum(diff1) / len(diff1))
+        seed_dawa_r.append(sum(diff1_r) / len(diff1_r))
+
+        #Preprocessed DAWA
+        pdawa = dawa.Algorithm('pdawa','l1approx', [], 'greedyH2', [], 0.25, list(numpy.ones(len(x))),
+                               seed, stdb, True)
+        hatx2 = pdawa.Run(Q, x, 1.0)
+        est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+        # diff2 = abs(true_ans - est_ans)
+        diff2_r = [abs((true_ans[i] - est_ans[i]))/max(1,abs(true_ans[i])) for i in range(len(Q))]
+        # seed_pdawa.append(sum(diff2) / len(diff2))
+        seed_pdawa_r.append(sum(diff2_r) / len(diff2_r))
+
+        #Preprocessed DAWA - no splitting
+        npdawa = dawa.Algorithm('pdawa','l1approx', [], 'greedyH2', [], 0.25, list(numpy.ones(len(x))),
+                               seed, stdb, False)
+        hatx3 = npdawa.Run(Q, x, 1.0)
+        est_ans3 = numpy.array([sum([sum(hatx3[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+        # diff2 = abs(true_ans - est_ans)
+        diff3_r = [abs((true_ans[i] - est_ans3[i]))/max(1,abs(true_ans[i])) for i in range(len(Q))]
+        # seed_pdawa.append(sum(diff2) / len(diff2))
+        seed_npdawa_r.append(sum(diff3_r) / len(diff3_r))
+
+    res_dawa = [numpy.mean(seed_dawa_r), numpy.std(seed_dawa_r)]
+    res_pdawa = [numpy.mean(seed_pdawa_r), numpy.std(seed_pdawa_r)]
+    res_npdawa = [numpy.mean(seed_npdawa_r), numpy.std(seed_npdawa_r)]
+
+    return [res_dawa, res_pdawa, res_npdawa]
+
+from multiprocessing import Pool
+mean_dawa = []
+mean_pdawa = []
+mean_npdawa = []
+std_dawa = []
+std_pdawa = []
+std_npdawa = []
+
+import time
+wlen = 10
+wn = len(stdBound)/wlen
+for i in range(wn):
+    start_time = time.time()
+    window = stdBound[i*wlen : (i+1)*wlen]
+    print window
+    pool = Pool(processes=len(window))
+    results = pool.map(solve_query, window)
+    for r in results:
+        mean_dawa.append(r[0][0])
+        std_dawa.append(r[0][1])
+
+        mean_pdawa.append(r[1][0])
+        std_pdawa.append(r[1][1])
+
+        mean_npdawa.append(r[2][0])
+        std_npdawa.append(r[2][1])
+
+    print "it took %f secs" % (time.time() - start_time)
+    print "%s stdbounds executed." % len(mean_pdawa)
+# eps = [0.001, 0.01, 0.05, 0.1, 0.5, 1.0]
+# Qsize = 100
+# Q = query.RandomCenter(xSize, Qsize)
+# def solve_eps(e):
+#     print(e)
+#     seed_dawa = []
+#     seed_pdawa = []
+#     # Q = query.RandomRange(xSize, qs)
+#     # Q = query.RandomCenter(xSize, qs)
+#     true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#
+#     for seed in seeds:
+#         #DAWA on X
+#         dawa_orig = dawa.Algorithm('dawa', 'l1approx', [], 'greedyH', [], 0.25, list(numpy.ones(len(x))), seed)
+#         hatx = dawa_orig.Run(Q, x, e)
+#
+#         est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         diff1 = abs(true_ans - est_ans)
+#         diff1_r = [abs((true_ans[i] - est_ans[i])/true_ans[i]) for i in range(len(Q))]
+#         seed_dawa.append(sum(diff1) / len(diff1))
+#         # seed_dawa_r.append(sum(diff1_r) / len(diff1_r))
+#
+#         #Preprocessed DAWA
+#         pdawa = dawa.Algorithm('pdawa','l1approx', [], 'greedyH2', [], 0.25, list(numpy.ones(len(x))), seed)
+#         hatx2 = pdawa.Run(Q, x, e)
+#         est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         diff2 = abs(true_ans - est_ans)
+#         diff2_r = [abs((true_ans[i] - est_ans[i])/true_ans[i]) for i in range(len(Q))]
+#         seed_pdawa.append(sum(diff2) / len(diff2))
+#         # seed_pdawa_r.append(sum(diff2_r) / len(diff2_r))
+#
+#     # mean_dawa.append(numpy.mean(seed_dawa))
+#     # std_dawa.append(numpy.std(seed_dawa))
+#     # mean_dawa_r.append(numpy.mean(seed_dawa_r))
+#     # std_dawa_r.append(numpy.std(seed_dawa_r))
+#     res_dawa = [numpy.mean(seed_dawa), numpy.std(seed_dawa)]
+#     res_pdawa = [numpy.mean(seed_pdawa), numpy.std(seed_pdawa)]
+#
+#     # mean_pdawa.append(numpy.mean(seed_pdawa))
+#     # std_pdawa.append(numpy.std(seed_pdawa))
+#     # mean_pdawa_r.append(numpy.mean(seed_pdawa_r))
+#     # std_pdawa_r.append(numpy.std(seed_pdawa_r))
+#     return [res_dawa, res_pdawa]
+# from multiprocessing import Pool
+# pool = Pool(processes=len(eps))
+# results = pool.map(solve_eps, eps)
+#for qs in Qsizes:
+    # print(qs)
+    # seed_dawa = []
+    # seed_pdawa = []
+    # seed_pdawa2 = []
+    # seed_dawa_r = []
+    # seed_pdawa_r = []
+    # seed_pdawa2_r = []
+    # comp_tmp = []
+    #
+    # Q = query.RandomRange(xSize, qs)
+    # true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+    # # Qb = getQueryList(Q)
+    # # Q1 = Qb[:]
+    # # xx, buckets, bweights = initialPartitioning(x, Q1)
+    # # Qr = numpy.array(query_Reform(Qb, buckets))
+    #
+    # # comp_pre.append(len(x) - len(xx))
+    #
+    # for seed in seeds:
+    #     # Q = query.RandomRange(xSize, qs)
+    #     # true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+    #     # Qb = getQueryList(Q)
+    #     # Q1 = Qb[:]
+    #     # xx, buckets, bweights = initialPartitioning(x, Q1)
+    #     # Qr = numpy.array(query_Reform(Qb, buckets))
+    #
+    #     #DAWA on X
+    #     # hatx = dawa.Algorithm('l1approx', [], 'greedyH', [], 0.25).Run(Q, x, 1.0)
+    #     dawa_orig = dawa.Algorithm('dawa', 'l1approx', [], 'greedyH', [], 0.25, list(numpy.ones(len(x))), seed)
+    #     hatx = dawa_orig.Run(Q, x, 1.0)
+    #     # n2o, peo = dawa_orig.Partition_error(x)
+    #     # error_tmp_dawa.append(peo)
+    #     # n2o_tmp.append(n2o)
+    #     #
+    #     est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+    #     diff1 = abs(true_ans - est_ans)
+    #     diff1_r = [abs((true_ans[i] - est_ans[i])/true_ans[i]) for i in range(len(Q))]
+    #     seed_dawa.append(sum(diff1) / len(diff1))
+    #     seed_dawa_r.append(sum(diff1_r) / len(diff1_r))
+    #
+    #     #Preprocessed DAWA
+    #     pdawa = dawa.Algorithm('pdawa','l1approx', [], 'greedyH2', [], 0.25, list(numpy.ones(len(x))), seed)
+    #     # x2 = pdawa.Run(Qr, xx, 1.0)
+    #     # hatx2 = data_Rebuild(x2, bweights, xSize)
+    #     hatx2 = pdawa.Run(Q, x, 1.0)
+    #     est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+    #     diff2 = abs(true_ans - est_ans)
+    #     diff2_r = [abs((true_ans[i] - est_ans[i])/true_ans[i]) for i in range(len(Q))]
+    #     seed_pdawa.append(sum(diff2) / len(diff2))
+    #     seed_pdawa_r.append(sum(diff2_r) / len(diff2_r))
+    #
+    #     ##### now PDAWA with l1partition
+    #     pdawa2 = dawa.Algorithm('pdawa', 'l1partition', [], 'greedyH2', [], 0.25, list(numpy.ones(len(x))), seed)
+    #     # x22 = pdawa2.Run(Qr, x, 1.0)
+    #     # hatx22 = data_Rebuild(x22, bweights, xSize)
+    #     hatx22 = pdawa.Run(Q, x, 1.0)
+    #     est_ans = numpy.array([sum([sum(hatx22[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+    #     diff22 = abs(true_ans - est_ans)
+    #     diff22_r = [abs((true_ans[i] - est_ans[i])/true_ans[i]) for i in range(len(Q))]
+    #     seed_pdawa2.append(sum(diff22) / len(diff22))
+    #     seed_pdawa2_r.append(sum(diff22_r) / len(diff22_r))
+    #
+    # # comp_pre.append(sum(comp_tmp)/10)
+    # # n2_dawa.append(sum(n2o_tmp)/10)
+    # # n2_pre.append(sum(n2p_tmp)/10)
+    # # error_part_pre.append(sum(error_tmp_pre)/10)
+    # # error_part_dawa.append(sum(error_tmp_dawa)/10)
+    #
+    # mean_dawa.append(numpy.mean(seed_dawa))
+    # std_dawa.append(numpy.std(seed_dawa))
+    # mean_dawa_r.append(numpy.mean(seed_dawa_r))
+    # std_dawa_r.append(numpy.std(seed_dawa_r))
+    #
+    # mean_pdawa.append(numpy.mean(seed_pdawa))
+    # std_pdawa.append(numpy.std(seed_pdawa))
+    # mean_pdawa_r.append(numpy.mean(seed_pdawa_r))
+    # std_pdawa_r.append(numpy.std(seed_pdawa_r))
+    #
+    # mean_pdawa2.append(numpy.mean(seed_pdawa2))
+    # std_pdawa2.append(numpy.std(seed_pdawa2))
+    # mean_pdawa2_r.append(numpy.mean(seed_pdawa2_r))
+    # std_pdawa2_r.append(numpy.std(seed_pdawa2_r))
+# xsizes = [1000, 2000, 5000, 7000, 10000]
+# xsizes = [12000, 15000, 20000]
+# seeds = [5, 50, 500, 5000, 50000, 500000]
+# error_part_pre = []
+# error_part_dawa = []
+# for xSize in xsizes:
+#     x = dataGenerator(xSize, 'uniform')
+#
+#     temp_orig = []
+#     temp_pre = []
+#     # Q = query.RandomRange(xSize, 50, )
+#     # true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#     # Qb = getQueryList(Q)
+#     # Q1 = Qb[:]
+#     # xx, buckets, bweights = initialPartitioning(x, Q1)
+#     # # error = preprocessingError(x, xx, buckets, bweights)
+#     # # result_rdawa.append(error)
+#     # Qr = query_Reform(Qb, buckets)
+#     # # comp_pre.append(len(x) - len(xx))
+#
+#     error_tmp_pre = []
+#     error_tmp_dawa = []
+#
+#     for s in seeds:
+#         Q = query.RandomRange(xSize, 1000, s)
+#         true_ans = numpy.array([sum([sum(x[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         Qb = getQueryList(Q)
+#         Q1 = Qb[:]
+#         xx, buckets, bweights = initialPartitioning(x, Q1)
+#         Qr = query_Reform(Qb, buckets)
+#
+#         # DAWA on X
+#         dawa_orig = dawa.Algorithm('l1approx', [], 'greedyH', [], 0.25)
+#         hatx = dawa_orig.Run(Q, x, 1.0)
+#         # error_tmp_dawa.append(dawa_orig.Partition_error(x))
+#         # result_dawa.append(error)
+#
+#         est_ans = numpy.array([sum([sum(hatx[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         diff = abs(true_ans - est_ans)
+#
+#         # error = sum([abs(x[i] - hatx[i]) for i in range(len(x))]) / len(x)
+#         # result_dawa.append(error)
+#
+#         temp_orig.append(sum(diff) / len(diff))
+#
+#         # Preprocessed DAWA
+#         dawa_pre = dawa.Algorithm('l1approx', [], 'greedyH2', [], 0.25, bweights)
+#         x2 = dawa_pre.Run(Qr, xx, 1.0)
+#         hatx2 = data_Rebuild(x2, buckets, xSize)
+#
+#         # error_tmp_pre.append(dawa_pre.Partition_error(xx))
+#         # error1 = preprocessingError(x, xx, buckets, bweights)
+#         # result_rdawa.append(error2)
+#         # result_dawa.append(error1)
+#
+#         est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+#         diff = abs(true_ans - est_ans)
+#
+#         # error = sum([abs(x[i] - hatx2[i]) for i in range(len(x))])/len(x)
+#         # result_rdawa.append(error)
+#
+#         temp_pre.append(sum(diff)/len(diff))
+#
+#     # error_part_pre.append(sum(error_tmp_pre)/10)
+#     # error_part_dawa.append(sum(error_tmp_dawa)/10)
+#     result_rdawa.append(sum(temp_pre)/len(seeds))
+#     result_dawa.append(sum(temp_orig)/len(seeds))
+
+result_dawa = numpy.array([mean_dawa, std_dawa], dtype=object)
+result_pdawa = numpy.array([mean_pdawa, std_pdawa], dtype=object)
+result_npdawa = numpy.array([mean_npdawa, std_npdawa], dtype=object)
+
+# result_dawa_r = numpy.array([mean_dawa_r, std_dawa_r], dtype=object)
+# result_pdawa_r = numpy.array([mean_pdawa_r, std_pdawa_r], dtype=object)
+# result_npdawa_r = numpy.array([mean_npdawa_r, std_npdawa_r], dtype=object)
+
+# numpy.savez('result.npz', dawa=result_dawa, pdawa=result_pdawa, pdawa2=result_pdawa2, dawa_r=result_dawa_r, pdawa_r=result_pdawa_r, pdawa2_r=result_pdawa2_r)
+import os
+path = "/home/shiny/Documents/results"
+
+numpy.savez(os.path.join(path ,'result.npz'), dawa=result_dawa, pdawa=result_pdawa,
+            npdawa=result_npdawa, xAxis=stdBound)
+
+
+
+
+
+
+
+# f, ax = plt.subplots()
+# ax.plot(Qsizes, result_dawa, 'bo-', label = 'Dawa')
+# ax.plot(Qsizes, result_rdawa, 'ro-', label = 'Pre+Dawa')
+# ## fig = plt.figure()
+# # ff = f.add_subplot(111)
+# # i =  0
+# # for xy in zip(Qsizes, result_rdawa):
+# #     ff.annotate('(%s, %s)' % (comp_pre[i], n2_pre[i]), xy=xy, textcoords='data')
+# #     i = i + 1
+#
+# # i =  0
+# # for xy in zip(Qsizes, result_dawa):
+# #     ff.annotate('(%s)' % (n2_dawa[i]), xy=xy, textcoords='data')
+# #     i = i + 1
+#
+# plt.xticks(Qsizes, Qsizes)
+# # plt.ytickz(result_rdawa, result_rdawa)
+# # ax.plot([a for a in range(len(Q))], diff1, 'b-', label = 'Dawa')
+# # ax.plot([a for a in range(len(Q))], diff2, 'r-', label = 'DAWA + Preprocessing')
+# plt.title('Complex Distribution |x|=10K New Cost Func')
+# plt.xlabel('Size of query set')
+# plt.ylabel('Average error')
+# # plt.xlim([0.0, 1.1])
+# # plt.ylim([0.0,0.0001])
+# # Now add the legend with some customizations.
+# legend = ax.legend(loc='up left', shadow=False)
+#
+# # The frame is matplotlib.patches.Rectangle instance surrounding the legend.
+# frame = legend.get_frame()
+# frame.set_facecolor('0.90')
+#
+# # Set the fontsize
+# for label in legend.get_texts():
+#     label.set_fontsize('large')
+#
+# for label in legend.get_lines():
+#     label.set_linewidth(1.5)  # the legend line width
+# plt.show()
+
+
+## original dawa
+# hatx1 = dawa.Algorithm('dawa').Run(Q, x, 0.5)
+# est_ans = numpy.array([sum([sum(hatx1[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# diff = abs(true_ans - est_ans)
+# result.append(sum(diff)/len(diff))
+
+# Preprocessed DAWA
+# x2 = dawa.Algorithm('dawa').Run(Qr, xx, 0.5)
+#
+# hatx2 = data_Reform(x2, buckets, xSize)
+#
+# est_ans = numpy.array([sum([sum(hatx2[int(lb):int(rb + 1)]) * wt for wt, lb, rb in q]) for q in Q])
+# diff = abs(true_ans - est_ans)
+# result.append(sum(diff)/len(diff))
+
+#
+# from matplotlib import pyplot as plt
+#
+# fig = plt.figure()
+# ax = fig.add_subplot(111)
+#
+# A = -0.75, -0.25, 0, 0.25, 0.5, 0.75, 1.0
+# B = 0.73, 0.97, 1.0, 0.97, 0.88, 0.73, 0.54
+#
+# plt.plot(A,B)
+# for xy in zip(A, B):                                       # <--
+#     ax.annotate('(%s, %s)' % xy, xy=xy, textcoords='data') # <--
+#
+# ax2 = fig.add_subplot(111)
+#
+# A = 1, 1.5, 2, 2.25, 1.5, 1.75, 1.0
+# B = 1.73, 2.97, 2.0, 1.97, 1.88, 1.73, 1.54
+#
+# plt.plot(A,B)
+# for xy in zip(A, B):                                       # <--
+#     ax2.annotate('(%s, %s)' % xy, xy=xy, textcoords='data') # <--
+#
+# plt.grid()
+# plt.show()
